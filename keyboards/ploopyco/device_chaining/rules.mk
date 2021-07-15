@@ -25,8 +25,9 @@ BLUETOOTH_ENABLE = no       # Enable Bluetooth
 AUDIO_ENABLE = no           # Audio output
 POINTING_DEVICE_ENABLE = no
 MOUSEKEY_ENABLE = no        # Mouse keys
+WAIT_FOR_USB = no
+NO_USB_STARTUP_CHECK = yes
 
 QUANTUM_LIB_SRC += analog.c
-# SRC +=
 
 DEFAULT_FOLDER = ploopyco/device_chaining

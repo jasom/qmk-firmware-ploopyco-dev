@@ -16,7 +16,5 @@
 
 #pragma once
 
-#include "quantum.h"
-#include "wait.h"
-
 #define LAYOUT(k00) {{ KC_NO }}
+
