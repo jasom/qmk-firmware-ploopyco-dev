@@ -16,11 +16,12 @@
  */
 #include "opt_encoder.h"
 
+#define SCROLL_WHEEL_HYSTERESIS 2
+
 enum State state;
 
 /* Variables used for scroll wheel functionality. */
-bool lohif;
-bool hilof;
+static int accum;
 int  lowA;
 int  highA;
 bool cLowA;
@@ -47,9 +48,8 @@ int  arHighB[SCROLLER_AR_SIZE];
 /* Setup function for the scroll wheel. Initializes
    the relevant variables. */
 void opt_encoder_init(void) {
+    accum            = 0;
     state            = HIHI;
-    lohif            = false;
-    hilof            = false;
     lowA             = 1023;
     highA            = 0;
     cLowA            = false;
@@ -70,6 +70,27 @@ void opt_encoder_init(void) {
     scrollThresholdB = 0;
 }
 
+/******************************************************************
+ * How this works: there are 4 encoder states:
+ *
+ *  +---------------HIHI------------+
+ * HILO                            LOHI
+ *  +---------------LOLO------------+
+ *
+ *  Travelling around the circle clockwise indicates a positive value,
+ *  anti-clockwise indicates a negative value.
+ *
+ *  Sometimes we miss a state though, e.g. HILO to LOHI.  This gives us no
+ *  information about the direction of travel, but is otherwise benign.  The
+ *  scroll-wheel (lacking detents) can sit right between two states as well,
+ *  causing "fluttering"
+ *
+ *  So, when we detect a clockwise transition, we increment an accumulator,
+ *  when we detect an anti-clockwise transition, we decrement.  Only when the
+ *  accumulator hits a threshold (SCROLL_WHEEL_HYSTERESIS), do we signal a
+ *  scroll event.
+ */
+
 int opt_encoder_handler(int curA, int curB) {
     if (lowOverflowA == false || highOverflowA == false) calculateThresholdA(curA);
     if (lowOverflowB == false || highOverflowB == false) calculateThresholdB(curB);
@@ -77,7 +98,6 @@ int opt_encoder_handler(int curA, int curB) {
     bool LO = false;
     bool HI = true;
     bool sA, sB;
-    int  ret = 0;
 
     if (curA < scrollThresholdA)
         sA = LO;
@@ -89,63 +109,49 @@ int opt_encoder_handler(int curA, int curB) {
     else
         sB = HI;
 
-    if (state == HIHI) {
-        if (sA == LO && sB == HI) {
-            state = LOHI;
-            if (hilof) {
-                ret   = 1;
-                hilof = false;
-            }
-        } else if (sA == HI && sB == LO) {
-            state = HILO;
-            if (lohif) {
-                ret   = -1;
-                lohif = false;
-            }
-        }
-    }
+    enum State newState;
 
-    else if (state == HILO) {
-        if (sA == HI && sB == HI) {
-            state = HIHI;
-            hilof = true;
-            lohif = false;
-        } else if (sA == LO && sB == LO) {
-            state = LOLO;
-            hilof = true;
-            lohif = false;
-        }
+    if (sA == LO) {
+        if (sB == LO)
+            newState = LOLO;
+        else
+            newState = LOHI;
+    } else {
+        if (sB == LO)
+            newState = HILO;
+        else
+            newState = HIHI;
     }
-
-    else if (state == LOLO) {
-        if (sA == HI && sB == LO) {
-            state = HILO;
-            if (lohif) {
-                ret   = 1;
-                lohif = false;
-            }
-        } else if (sA == LO && sB == HI) {
-            state = LOHI;
-            if (hilof) {
-                ret   = -1;
-                hilof = false;
-            }
-        }
+    switch (state) {
+        case HIHI:
+            if (newState ==  LOHI) accum++;
+            if (newState == HILO) accum--;
+            break;
+        case LOHI:
+            if (newState == LOLO) accum++;
+            if (newState == HIHI) accum--;
+            break;
+        case LOLO:
+            if (newState == HILO) accum++;
+            if (newState == LOHI) accum--;
+            break;
+        case HILO:
+            if (newState == HIHI) accum++;
+            if (newState == LOLO) accum--;
+            break;
     }
-
-    else {  // state must be LOHI
-        if (sA == HI && sB == HI) {
-            state = HIHI;
-            lohif = true;
-            hilof = false;
-        } else if (sA == LO && sB == LO) {
-            state = LOLO;
-            lohif = true;
-            hilof = false;
-        }
+    state = newState;
+    if (accum >= SCROLL_WHEEL_HYSTERESIS) {
+        accum=0;
+        return 1;
     }
+    if (-accum >= SCROLL_WHEEL_HYSTERESIS) {
+        accum=0;
+        return -1;
+    }
+    return 0;
 
-    return ret;
+
 }
 
 void calculateThresholdA(int curA) { scrollThresholdA = calculateThreshold(curA, &lowA, &highA, &cLowA, &cHighA, arLowA, arHighA, &lowIndexA, &highIndexA, &lowOverflowA, &highOverflowA); }
